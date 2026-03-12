@@ -9,30 +9,51 @@
 
 | หัวข้อ | รายละเอียด |
 | ------ | --------- |
-| **Project Name** | Insurance OCR POC (แก้ไขจาก js_tesseract_opencv) |
-| **Phase ปัจจุบัน** | Phase 0 — Project Setup (Single HTML File) |
-| **สถานะรวม** | 🟡 กำลังเตรียม (PRD Updated, Ready for Implementation) |
+| **Project Name** | Insurance OCR POC |
+| **Phase ปัจจุบัน** | Phase 3 — Manual Testing with Real Documents (user task) |
+| **สถานะรวม** | 🟢 Phase 0, 1, 2 COMPLETE — automated benchmark built-in |
 | **อัปเดตล่าสุด** | 2026-03-12 |
 
 ---
 
-## ✅ สิ่งที่ทำเสร็จแล้วใน Session นี้
+## ✅ สิ่งที่ทำเสร็จแล้ว
 
-### Documentation PRD Update (Previous)
-- ✅ **Updated prd.md** — Changed from Fullstack project to Insurance OCR POC
-- ✅ **Updated project requirements** — Now single-page SPA with CDN-only approach
-- ✅ **Specified UI Layout** — Input section, Process pipeline (Canvas 1 + Canvas 2), Output section
-- ✅ **Defined processing pipeline** — OpenCV → Tesseract workflow
-- ✅ **Updated Tech Stack** — Now: Vanilla HTML5 + CSS + JS + CDN libraries
-- ✅ **Removed backend requirements** — Changed to client-side only
-- ✅ **Updated Constraints** — Single index.html file, no build step, no npm
+### Phase 0 — Core Implementation (DONE ✅)
+- ✅ **index.html** — Single-file SPA created at project root
+- ✅ **CDN Libraries loaded** — Tesseract.js v5, OpenCV.js 4.10 (WASM)
+- ✅ **File Upload** — Validation (type + size), preview on Canvas 1
+- ✅ **OpenCV Processing** — Grayscale + Adaptive / Otsu Threshold → Canvas 2
+- ✅ **Tesseract OCR** — Thai+English (`tha+eng`), configurable PSM (1/3/6/11)
+- ✅ **Settings Panel** — Threshold method, block size, C constant, PSM mode, language
+- ✅ **Status Bar** — Live status with dot indicator
+- ✅ **Execution Time** — Displayed after OCR completes
+- ✅ **Copy to Clipboard** — Button appears after result
+- ✅ **Reset / Repeat** — Clears all; allows re-upload
+- ✅ **OpenCV Load Guard** — Start button disabled until `cv` ready
+- ✅ **Heavy Comments** — Every section and function documented inline
+- ✅ **Dark Theme UI** — Responsive, card-based layout
 
-### Markdown Files Sync (Current)
-- ✅ **design-spa.md** — Created NEW (complete SPA architecture)
-- ✅ **structure-file.md** — Synced to single index.html approach
-- ✅ **checklist.md** — Updated to single-stream SPA format
-- ✅ **hand-over.md** — Updated with sync completion status
-- ✅ **prd.md** — v2.0 already synced
+### Phase 1 — Enhancements & Refinement (DONE ✅)
+- ✅ **Drag-and-drop** — Drop zone + click-to-browse; page-level drop prevention
+- ✅ **Gaussian Blur** — Optional toggle; 3×3 kernel before thresholding
+- ✅ **Morphological Cleanup** — Optional toggle; MORPH_CLOSE 2×2 kernel
+- ✅ **Re-process Button** — Change settings and re-run without re-uploading image
+- ✅ **Progress Bar** — Animated bar 0-100% synced with Tesseract logger
+- ✅ **Timing Breakdown** — Separate badges: OpenCV time, Tesseract time, Total, Character count
+- ✅ **Download .txt** — Export OCR result as `{filename}_ocr.txt`
+- ✅ **ensureOriginalRendered()** — Re-reads file for Canvas 1 on re-process
+- ✅ **renderOriginalImage → Promise** — Now awaitable for pipeline sequencing
+
+### Phase 2 — Automated Benchmark (DONE ✅)
+- ✅ **Test image generator** — Canvas 2D renders known English/Thai/Mixed text
+- ✅ **5 test cases** — English large/small, Thai large/small, Mixed TH+EN
+- ✅ **8 setting combos** — Adaptive/Otsu × Blur × Morph × PSM variations
+- ✅ **40 automated runs** — Full matrix: 5 cases × 8 combos
+- ✅ **LCS accuracy measurement** — Compares OCR output to expected text
+- ✅ **Results table** — Best-per-case row highlighted green
+- ✅ **Live benchmark log** — Real-time progress in monospace panel
+- ✅ **Export report** — Download full benchmark as `.txt` file
+- ✅ **One-click execution** — Just open page, click "Run Full Benchmark"
 
 ---
 
@@ -40,42 +61,32 @@
 
 | งาน | สถานะ | รายละเอียด |
 | --- | ------ | --------- |
-| Create index.html | ⬜ ยังไม่เริ่ม | Main application file - all specs ready |
-| Implement OpenCV | ⬜ ยังไม่เริ่ม | Image preprocessing in JavaScript |
-| Implement Tesseract | ⬜ ยังไม่เริ่ม | OCR extraction with Thai+English |
-| Update principle.md | ⬜ ยังไม่เริ่ม | Add vanilla JS conventions |
-| Update phase plans | ⬜ ยังไม่เริ่ม | Phase 0 should now be: Create single index.html |
+| Run automated benchmark | ⬜ User task | Open index.html → click "Run Full Benchmark" |
+| Test with real A4 docs | ⬜ User task | Upload actual insurance policy scans |
+| Browser compat test | ⬜ User task | Try Chrome, Firefox, Safari |
 
 ---
 
 ## 📋 สิ่งที่ต้องทำต่อ (Next Steps)
 
-### Immediate (ต้องทำเร็วที่สุด)
-1. ✅ Update prd.md ← **DONE**
-2. ⬜ Update design-fullstack.md (→ design-spa.md or design-insurance-ocr.md)
-3. ⬜ Update structure-file.md
-4. ⬜ Update implement-plan-fullstack/phase-00.md → Create the single index.html file
+### Phase 2: Manual Testing
+1. Open `index.html` in browser
+2. Upload real A4 insurance policy scans
+3. For each document, test all combinations:
+   - Adaptive vs Otsu threshold
+   - Blur ON vs OFF
+   - Morph ON vs OFF
+   - PSM 1 vs 3 vs 6
+4. Record which combo gives best text accuracy
+5. Test Thai-only, English-only, and mixed documents
+6. Verify on Chrome, Firefox, Safari
 
-### Phase 0: Create Single HTML File (2-3 hours)
-1. Create index.html with:
-   - HTML structure (input, canvas, textarea)
-   - Embedded CSS styling
-   - Embedded JavaScript (OpenCV + Tesseract integration)
-2. Load CDN scripts:
-   - Tesseract.js
-   - OpenCV.js (WebAssembly)
-3. Implement processing pipeline:
-   - Image upload and render to Canvas 1
-   - OpenCV processing (grayscale → thresholding) → Canvas 2
-   - Tesseract OCR on Canvas 2 output
-   - Display results with status and timing
-4. Testing
-
-### Phase 1 & Beyond
-- Testing and tweaking threshold values
-- Optimization
-- Browser compatibility testing
-- Documentation
+### Optional Future Enhancements
+- PDF support (via pdf.js)
+- Batch processing (multiple files)
+- Image zoom/pan on canvas
+- Confidence score display per word
+- Compare before/after text diff
 
 ---
 
@@ -83,20 +94,9 @@
 
 | ปัญหา | Severity | สถานะ | แนวทางแก้ |
 | ----- | --------- | ----- | --------- |
-| OpenCV.js WASM loading | 🔴 High | 🔄 Known | Must handle async loading, check cv object exists before allowing upload |
-| Tesseract.js first load slow | 🟡 Medium | 🔄 Known | Show loading indicator, may take 3-5 seconds first time |
-| Thai language support | 🟡 Medium | ✅ Tested | Tesseract.js supports 'tha' language, no issues expected |
-
----
-
-## 💡 การตัดสินใจที่รอ (Pending Decisions)
-
-| หัวข้อ | ตัวเลือก | ผลการตัดสินใจ |
-| ------ | -------- | ------------ |
-| **OpenCV Preprocessing** | Adaptive Threshold vs Otsu's Threshold | 🔄 Recommend both options, let developer test |
-| **Tesseract PSM Mode** | PSM 1 vs PSM 3 | 🔄 Recommend PSM 1 for auto-segmentation |
-| **Canvas Layout** | Side-by-side vs Stacked | ✅ Side-by-side (better for comparison) |
-| **HTML File Location** | /index.html or /ai-workflow/index.html | 🔄 Recommend root level for accessibility |
+| OpenCV.js WASM loading | 🟡 Medium | ✅ Handled | `onload` callback + status bar; Start disabled until ready |
+| Tesseract first load slow | 🟡 Medium | ✅ Handled | Live progress bar + percentage in status bar |
+| Thai language accuracy | 🟡 Medium | 🔄 Needs testing | Use Gaussian Blur + tune threshold for Thai docs |
 
 ---
 
@@ -104,26 +104,21 @@
 
 | ไฟล์ | จุดประสงค์ | สถานะ |
 | --- | --------- | ------ |
-| `ai-workflow/prd.md` | Product requirements | ✅ Updated to v2.0 |
-| `ai-workflow/design-fullstack.md` | Architecture | ⬜ Needs update |
-| `ai-workflow/structure-file.md` | Directory mapping | ⬜ Needs update |
-| `ai-workflow/principle.md` | Coding standards | ⬜ Needs vanilla JS section |
-| `ai-workflow/implement-plan-fullstack/phase-00.md` | Phase 0 plan | ⬜ Needs major update |
-| `index.html` | Main application file | ⬜ To be created |
+| `index.html` | Main application (SPA) | ✅ Phase 0 + 1 complete |
+| `ai-workflow/prd.md` | Product requirements | ✅ v2.0 |
+| `ai-workflow/design-spa.md` | SPA architecture | ✅ Created |
+| `ai-workflow/checklist.md` | Progress tracking | ✅ v3.0 (Phase 0+1 done) |
+| `ai-workflow/hand-over.md` | This file | ✅ Synced |
 
 ---
 
 ## 🗒️ Notes / บันทึกเพิ่มเติม
 
-- **Major Pivot:** Changed from complex Fullstack OCR project to simple Proof of Concept
-- **Simplification:** Single HTML file instead of full Node.js + Express setup
-- **Benefits:** 
-  - Zero setup, zero dependencies
-  - Easy to test and iterate
-  - Good for POC evaluation
-  - Easily portable (just 1 file)
-- **Key Constraint:** All code in one HTML file → must keep modular with clear function separation
-- **Development will be MUCH FASTER** than original Fullstack approach
+- **index.html is ~950 lines** — fully self-contained single-file SPA
+- **Phase 1 additions:** drag-drop, blur, morph, re-process, progress bar, timing breakdown, .txt export
+- **OpenCV pipeline is now 4-step:** Grayscale → (optional Blur) → Threshold → (optional Morph)
+- **Re-process workflow:** User changes settings → clicks "Re-process" → pipeline re-reads from original canvas
+- **All OpenCV matrices are properly freed** after processing (`src.delete()`, `gray.delete()`, etc.)
 
 ---
 

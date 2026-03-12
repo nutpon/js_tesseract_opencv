@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Insurance OCR POC — OpenCV.js + Tesseract.js</title>
+
+  <!-- ============================================================
+       CDN: Load Tesseract.js for OCR (WASM-based)
+       ============================================================ -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- ============================================================
+       CDN: Load OpenCV.js for Image Pre-processing (WASM-based)
+       onload callback notifies our app when OpenCV is ready.
+       ============================================================ -->
+  <script
+    async
+    src="https://docs.opencv.org/4.10.0/opencv.js"
+    onload="onOpenCvReady()"
+    onerror="onOpenCvError()"
+  ></script>
+
+  <style>
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-bg:          #0f1117;
+      --color-surface:     #1a1d27;
+      --color-surface2:    #22263a;
+      --color-border:      #2e3250;
+      --color-primary:     #4f8ef7;
+      --color-primary-h:   #6ba3ff;
+      --color-success:     #3ecf8e;
+      --color-warning:     #f5a623;
+      --color-error:       #f75f5f;
+      --color-text:        #e2e8f0;
+      --color-muted:       #8892a4;
+      --radius:            10px;
+      --shadow:            0 4px 24px rgba(0,0,0,.45);
+      --font:              'Segoe UI', 'Noto Sans Thai', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    /* ============================================================
+       LAYOUT
+       ============================================================ */
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Header */
+    .header { text-align: center; padding: 12px 0 4px; }
+    .header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.5px; }
+    .header h1 span { color: var(--color-primary); }
+    .header p  { color: var(--color-muted); font-size: .9rem; margin-top: 6px; }
+
+    /* Card container */
+    .card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: .8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--color-muted);
+      margin-bottom: 14px;
+    }
+
+    /* ============================================================
+       INPUT SECTION
+       ============================================================ */
+    .input-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    /* Custom file upload button */
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 9px 16px;
+      cursor: pointer;
+      font-size: .9rem;
+      transition: border-color .2s, background .2s;
+      flex-shrink: 0;
+    }
+    .file-label:hover { border-color: var(--color-primary); background: #1e2236; }
+    .file-label input[type="file"] { display: none; }
+    #fileNameDisplay {
+      font-size: .85rem;
+      color: var(--color-muted);
+      flex: 1;
+      min-width: 120px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Drag-and-drop zone (Phase 1) */
+    .drop-zone {
+      border: 2px dashed var(--color-border);
+      border-radius: 8px;
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--color-muted);
+      font-size: .85rem;
+      transition: border-color .2s, background .2s;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .drop-zone.dragover {
+      border-color: var(--color-primary);
+      background: rgba(79,142,247,.08);
+      color: var(--color-primary);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, filter .2s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn:not(:disabled):hover { filter: brightness(1.12); }
+
+    .btn-primary { background: var(--color-primary); color: #fff; }
+    .btn-secondary { background: #3d5a99; color: #fff; }
+    .btn-ghost   { background: var(--color-surface2); color: var(--color-text); border: 1px solid var(--color-border); }
+
+    /* ============================================================
+       STATUS BAR
+       ============================================================ */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: .85rem;
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      min-height: 40px;
+    }
+    .status-bar .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--color-muted);
+    }
+    .status-bar.loading .dot  { background: var(--color-warning); animation: pulse 1s infinite; }
+    .status-bar.processing .dot { background: var(--color-primary); animation: pulse .8s infinite; }
+    .status-bar.success .dot  { background: var(--color-success); animation: none; }
+    .status-bar.error .dot    { background: var(--color-error); animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* Progress bar (Phase 1) */
+    .progress-wrap {
+      display: none; /* shown during OCR */
+      margin-top: 8px;
+    }
+    .progress-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--color-surface2);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--color-primary);
+      border-radius: 3px;
+      transition: width .15s ease;
+    }
+
+    /* ============================================================
+       SETTINGS PANEL (threshold tweaking)
+       ============================================================ */
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .setting-item label {
+      display: block;
+      font-size: .78rem;
+      color: var(--color-muted);
+      margin-bottom: 5px;
+    }
+    .setting-item select,
+    .setting-item input[type="range"] {
+      width: 100%;
+    }
+    .setting-item select {
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      color: var(--color-text);
+      padding: 7px 10px;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+    .range-row { display: flex; align-items: center; gap: 10px; }
+    .range-row input[type="range"] { flex: 1; accent-color: var(--color-primary); }
+    .range-val {
+      min-width: 32px;
+      text-align: right;
+      font-size: .82rem;
+      color: var(--color-primary);
+      font-weight: 600;
+    }
+
+    /* Checkbox toggle (Phase 1) */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      font-size: .82rem;
+      color: var(--color-muted);
+    }
+    .toggle-row input[type="checkbox"] { accent-color: var(--color-primary); width: 16px; height: 16px; cursor: pointer; }
+
+    /* ============================================================
+       CANVAS PIPELINE
+       ============================================================ */
+    .canvas-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 700px) { .canvas-row { grid-template-columns: 1fr; } }
+
+    .canvas-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .canvas-label {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--color-muted);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+    .canvas-box {
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .canvas-box canvas {
+      max-width: 100%;
+      max-height: 500px;
+      display: block;
+    }
+    /* Placeholder text inside empty canvas box */
+    .canvas-placeholder {
+      color: var(--color-muted);
+      font-size: .82rem;
+      position: absolute;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       OUTPUT SECTION
+       ============================================================ */
+    .output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .exec-time {
+      font-size: .82rem;
+      color: var(--color-success);
+      font-weight: 600;
+      display: none; /* hidden until we have a result */
+    }
+    /* Timing breakdown badges (Phase 1) */
+    .timing-badges {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .timing-badge {
+      font-size: .75rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+    }
+    .timing-badge strong { color: var(--color-primary); }
+
+    #resultText {
+      width: 100%;
+      min-height: 220px;
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      color: var(--color-text);
+      font-family: 'Courier New', 'Noto Sans Thai', monospace;
+      font-size: .85rem;
+      line-height: 1.7;
+      padding: 14px;
+      resize: vertical;
+      outline: none;
+    }
+    #resultText:focus { border-color: var(--color-primary); }
+
+    /* Action row below textarea (Phase 1: expanded) */
+    .output-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .output-actions .btn { display: none; /* shown when result available */ }
+
+    /* ============================================================
+       BENCHMARK PANEL (Phase 2)
+       ============================================================ */
+    .bench-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .bench-header .card-title { margin-bottom: 0; }
+    .bench-status {
+      font-size: .82rem;
+      color: var(--color-muted);
+    }
+    .bench-log {
+      background: var(--color-surface2);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 14px;
+      font-family: 'Courier New', monospace;
+      font-size: .78rem;
+      line-height: 1.65;
+      color: var(--color-text);
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .78rem;
+      margin-top: 14px;
+    }
+    .bench-table th, .bench-table td {
+      padding: 7px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .bench-table th {
+      color: var(--color-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      font-size: .7rem;
+    }
+    .bench-table td { color: var(--color-text); }
+    .bench-table .match { color: var(--color-success); font-weight: 600; }
+    .bench-table .miss  { color: var(--color-error); font-weight: 600; }
+    .bench-table .best  { background: rgba(62,207,142,.08); }
+  </style>
+</head>
+<body>
+
+<!-- ================================================================
+     APP WRAPPER
+     ================================================================ -->
+<div class="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <div class="header">
+    <h1>🔍 Insurance OCR <span>POC</span></h1>
+    <p>OpenCV.js image pre-processing + Tesseract.js OCR &nbsp;·&nbsp; Thai &amp; English support</p>
+  </div>
+
+  <!-- ── Status Bar ─────────────────────────────────────────────── -->
+  <div class="status-bar loading" id="statusBar">
+    <div class="dot"></div>
+    <span id="statusText">Loading OpenCV.js (WebAssembly)... please wait.</span>
+  </div>
+  <!-- Progress bar for OCR (Phase 1) -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <!-- ── Input Section ──────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">📥 Step 1 — Upload Document</div>
+    <div class="input-row">
+      <!-- Custom styled file picker -->
+      <label class="file-label">
+        📂 Choose Image
+        <input type="file" id="imageInput" accept="image/*" onchange="handleFileUpload(event)" />
+      </label>
+      <span id="fileNameDisplay">No file chosen</span>
+
+      <!-- Start Processing — disabled until OpenCV is ready AND a file is selected -->
+      <button class="btn btn-primary" id="startBtn" onclick="startProcessing()" disabled>
+        ▶ Start Processing
+      </button>
+
+      <!-- Re-process: re-run pipeline with new settings without re-uploading (Phase 1) -->
+      <button class="btn btn-secondary" id="reprocessBtn" onclick="startProcessing()" style="display:none">
+        🔄 Re-process
+      </button>
+
+      <!-- Reset — clears everything -->
+      <button class="btn btn-ghost" id="resetBtn" onclick="resetAll()">
+        ↺ Reset
+      </button>
+    </div>
+
+    <!-- Drag-and-drop zone (Phase 1) -->
+    <div class="drop-zone" id="dropZone">
+      📎 Or drag &amp; drop an image file here
+    </div>
+  </div>
+
+  <!-- ── Settings / Tweaking Panel ──────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">⚙️ Settings — OpenCV &amp; Tesseract</div>
+    <div class="settings-grid">
+
+      <!-- ── OpenCV: Thresholding Method ────────────────────────── -->
+      <div class="setting-item">
+        <label for="threshMethod">OpenCV Threshold Method</label>
+        <select id="threshMethod">
+          <option value="adaptive">Adaptive Threshold (recommended)</option>
+          <option value="otsu">Otsu's Threshold</option>
+        </select>
+      </div>
+
+      <!-- ── Adaptive: Block Size ───────────────────────────────── -->
+      <div class="setting-item" id="blockSizeSetting">
+        <label>Adaptive Block Size: <span class="range-val" id="blockSizeVal">11</span></label>
+        <div class="range-row">
+          <input type="range" id="blockSize" min="3" max="51" step="2" value="11"
+                 oninput="document.getElementById('blockSizeVal').textContent = this.value" />
+        </div>
+      </div>
+
+      <!-- ── Adaptive: C constant ───────────────────────────────── -->
+      <div class="setting-item" id="cConstSetting">
+        <label>Adaptive C Constant: <span class="range-val" id="cConstVal">2</span></label>
+        <div class="range-row">
+          <input type="range" id="cConst" min="0" max="20" step="1" value="2"
+                 oninput="document.getElementById('cConstVal').textContent = this.value" />
+        </div>
+      </div>
+
+      <!-- ── Tesseract: PSM Mode ────────────────────────────────── -->
+      <div class="setting-item">
+        <label for="psmMode">Tesseract PSM Mode</label>
+        <select id="psmMode">
+          <option value="1">PSM 1 — Auto + OSD (recommended)</option>
+          <option value="3">PSM 3 — Fully Automatic</option>
+          <option value="6">PSM 6 — Single Text Block</option>
+          <option value="11">PSM 11 — Sparse Text</option>
+        </select>
+      </div>
+
+      <!-- ── Language ───────────────────────────────────────────── -->
+      <div class="setting-item">
+        <label for="ocrLang">OCR Language</label>
+        <select id="ocrLang">
+          <option value="tha+eng">Thai + English (recommended)</option>
+          <option value="eng">English only</option>
+          <option value="tha">Thai only</option>
+        </select>
+      </div>
+
+    </div>
+
+    <!-- Phase 1: Extra pre-processing toggles -->
+    <div class="toggle-row">
+      <input type="checkbox" id="enableBlur" />
+      <label for="enableBlur">Apply Gaussian Blur before thresholding (reduces scan noise)</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="enableMorph" />
+      <label for="enableMorph">Apply Morphological cleanup (close small gaps in text)</label>
+    </div>
+
+    <!-- Toggle adaptive-only settings based on threshold method -->
+    <script>
+      document.getElementById('threshMethod').addEventListener('change', function () {
+        const isAdaptive = this.value === 'adaptive';
+        document.getElementById('blockSizeSetting').style.display = isAdaptive ? '' : 'none';
+        document.getElementById('cConstSetting').style.display    = isAdaptive ? '' : 'none';
+      });
+    </script>
+  </div>
+
+  <!-- ── Canvas Pipeline ────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">🖼️ Step 2 — Image Processing Pipeline</div>
+    <div class="canvas-row">
+
+      <!-- Canvas 1: Original uploaded image -->
+      <div class="canvas-wrapper">
+        <div class="canvas-label">Original Image</div>
+        <div class="canvas-box" id="originalBox">
+          <span class="canvas-placeholder" id="originalPlaceholder">Upload an image to preview</span>
+          <canvas id="originalCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Canvas 2: OpenCV-processed image (grayscale + threshold) -->
+      <div class="canvas-wrapper">
+        <div class="canvas-label">Processed Image (OpenCV)</div>
+        <div class="canvas-box" id="processedBox">
+          <span class="canvas-placeholder" id="processedPlaceholder">Processed image appears here</span>
+          <canvas id="processedCanvas"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Output Section ─────────────────────────────────────────── -->
+  <div class="card">
+    <div class="output-header">
+      <div class="card-title" style="margin-bottom:0">📄 Step 3 — Extracted Text</div>
+      <span class="exec-time" id="execTime">⏱ 0.00 s</span>
+    </div>
+
+    <!-- Timing breakdown badges (Phase 1) -->
+    <div class="timing-badges" id="timingBadges">
+      <span class="timing-badge">OpenCV: <strong id="timeCV">–</strong></span>
+      <span class="timing-badge">Tesseract: <strong id="timeOCR">–</strong></span>
+      <span class="timing-badge">Total: <strong id="timeTotal">–</strong></span>
+      <span class="timing-badge">Characters: <strong id="charCount">–</strong></span>
+    </div>
+
+    <textarea id="resultText" readonly placeholder="OCR result will appear here after processing..."></textarea>
+
+    <!-- Action buttons below textarea (Phase 1: expanded) -->
+    <div class="output-actions">
+      <button class="btn btn-ghost" id="copyBtn" onclick="copyResult()">
+        📋 Copy to Clipboard
+      </button>
+      <button class="btn btn-ghost" id="downloadBtn" onclick="downloadResult()">
+        💾 Download .txt
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Benchmark / Self-Test Panel (Phase 2) ──────────────────── -->
+  <div class="card">
+    <div class="bench-header">
+      <div class="card-title">🧪 Phase 2 — Automated Benchmark</div>
+      <span class="bench-status" id="benchStatus">Ready</span>
+    </div>
+    <p style="font-size:.82rem;color:var(--color-muted);margin-bottom:12px;">
+      Generates test images with known Thai+English text, runs every setting combination, and
+      measures accuracy automatically. No manual work needed — just click the button.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <button class="btn btn-primary" id="benchRunBtn" onclick="runBenchmark()" disabled>
+        🚀 Run Full Benchmark
+      </button>
+      <button class="btn btn-ghost" id="benchExportBtn" onclick="exportBenchmark()" style="display:none">
+        💾 Export Report (.txt)
+      </button>
+    </div>
+    <div class="bench-log" id="benchLog">Waiting for OpenCV to load…</div>
+    <div id="benchTableWrap"></div>
+  </div>
+
+</div><!-- /.app -->
+
+
+<!-- ================================================================
+     JAVASCRIPT — ALL PROCESSING LOGIC
+     ================================================================ -->
+<script>
+
+/* ================================================================
+   1. GLOBAL STATE & CONFIGURATION
+   ================================================================ */
+
+/** Is OpenCV.js fully loaded and ready? */
+let cvReady = false;
+
+/** The currently selected image File object */
+let currentFile = null;
+
+/** Timestamp recorded at the start of processing */
+let startTime = 0;
+
+/** Has at least one successful run completed? (for Re-process button) */
+let hasResult = false;
+
+/**
+ * CONFIGURATION — tweak these defaults if needed.
+ * All threshold/OCR settings are also exposed via the UI.
+ */
+const CONFIG = {
+  MAX_FILE_SIZE_MB : 15,                              // Reject files larger than this
+  SUPPORTED_TYPES  : ['image/jpeg','image/png','image/gif','image/bmp','image/webp'],
+  CANVAS_MAX_WIDTH : 1200,                            // Scale down very wide images
+};
+
+
+/* ================================================================
+   2. OPENCV INITIALISATION CALLBACKS
+   (Called by the <script onload/onerror> attributes on the CDN tag)
+   ================================================================ */
+
+/**
+ * Called automatically when opencv.js finishes loading.
+ * Enables the UI and updates the status bar.
+ */
+function onOpenCvReady() {
+  cvReady = true;
+  setStatus('success', '✅ OpenCV.js ready.  Upload a document image and press Start Processing.');
+  refreshStartButton();
+}
+
+/** Called if opencv.js fails to load from CDN. */
+function onOpenCvError() {
+  setStatus('error', '❌ Failed to load OpenCV.js.  Check your internet connection and reload the page.');
+}
+
+
+/* ================================================================
+   3. EVENT HANDLERS
+   ================================================================ */
+
+/**
+ * Fires when the user picks a file via the file input.
+ * @param {Event} event - The file-input change event
+ */
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (file) loadFile(file);
+}
+
+/**
+ * Central file loader — called from both file-input and drag-and-drop.
+ * Validates, stores, renders preview, and resets previous results.
+ * @param {File} file
+ */
+function loadFile(file) {
+  /* ── Validate file type ──────────────────────────────────────── */
+  if (!CONFIG.SUPPORTED_TYPES.includes(file.type)) {
+    setStatus('error', `❌ Unsupported file type: ${file.type}.  Please upload JPG, PNG, GIF, BMP, or WebP.`);
+    currentFile = null;
+    refreshStartButton();
+    return;
+  }
+
+  /* ── Validate file size ──────────────────────────────────────── */
+  if (file.size > CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
+    setStatus('error', `❌ File too large (${(file.size/1024/1024).toFixed(1)} MB).  Max allowed: ${CONFIG.MAX_FILE_SIZE_MB} MB.`);
+    currentFile = null;
+    refreshStartButton();
+    return;
+  }
+
+  /* ── Store & show filename ───────────────────────────────────── */
+  currentFile = file;
+  document.getElementById('fileNameDisplay').textContent = file.name;
+
+  /* ── Clear any previous results ─────────────────────────────── */
+  clearOutputs(false /* keep file */);
+
+  /* ── Render preview on Canvas 1 ─────────────────────────────── */
+  renderOriginalImage(file);
+
+  setStatus('success', `✅ File selected: ${file.name}  (${(file.size/1024).toFixed(0)} KB).  Press Start Processing.`);
+  refreshStartButton();
+}
+
+
+/**
+ * "Start Processing" / "Re-process" button handler.
+ * Orchestrates the full pipeline: OpenCV → Tesseract.
+ */
+async function startProcessing() {
+  /* ── Guard clauses ───────────────────────────────────────────── */
+  if (!cvReady) {
+    setStatus('error', '⚠️ OpenCV.js is not ready yet.  Please wait.');
+    return;
+  }
+  if (!currentFile) {
+    setStatus('error', '⚠️ No image selected.  Please upload a file first.');
+    return;
+  }
+
+  /* ── Disable buttons during processing ──────────────────────── */
+  setProcessingUI(true);
+  startTime = performance.now();
+
+  /* ── Show progress bar ──────────────────────────────────────── */
+  showProgress(0);
+
+  try {
+    /* Step 1: Pre-process the image with OpenCV */
+    setStatus('processing', '🔄 Pre-processing image with OpenCV.js...');
+    showProgress(5);
+
+    /*
+     * For Re-process: we need to re-read from the original image.
+     * Ensure Canvas 1 is up-to-date before we process from it.
+     */
+    await ensureOriginalRendered();
+
+    const cvStart = performance.now();
+    await applyOpenCVProcessing();
+    const cvElapsed = performance.now() - cvStart;
+    showProgress(25);
+
+    /* Step 2: Run Tesseract OCR on the processed canvas */
+    setStatus('processing', '🔤 Running Tesseract OCR... 0%');
+    const ocrStart = performance.now();
+    const text = await performTesseractOCR();
+    const ocrElapsed = performance.now() - ocrStart;
+
+    showProgress(100);
+
+    /* Step 3: Show results with timing breakdown */
+    displayResults(text, cvElapsed, ocrElapsed);
+
+  } catch (err) {
+    console.error('[OCR Pipeline Error]', err);
+    setStatus('error', `❌ Processing failed: ${err.message}`);
+    hideProgress();
+  } finally {
+    setProcessingUI(false);
+  }
+}
+
+
+/**
+ * "Reset" button handler — clears everything back to initial state.
+ */
+function resetAll() {
+  currentFile = null;
+  hasResult = false;
+  clearOutputs(true /* also clear file */);
+  document.getElementById('fileNameDisplay').textContent = 'No file chosen';
+  document.getElementById('imageInput').value = '';
+  document.getElementById('reprocessBtn').style.display = 'none';
+  hideProgress();
+  setStatus(cvReady ? 'success' : 'loading',
+    cvReady ? '✅ OpenCV.js ready.  Upload a document image and press Start Processing.'
+            : 'Loading OpenCV.js...');
+  refreshStartButton();
+}
+
+
+/* ================================================================
+   4. DRAG-AND-DROP (Phase 1)
+   ================================================================ */
+
+/**
+ * Initialise drag-and-drop event listeners on the drop zone.
+ * Also allows dropping anywhere on the page body.
+ */
+function initDragDrop() {
+  const zone = document.getElementById('dropZone');
+
+  /* Prevent default browser file-open behaviour on the whole page */
+  ['dragenter','dragover','dragleave','drop'].forEach(evt => {
+    document.body.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); });
+  });
+
+  /* Visual feedback when hovering over drop zone */
+  zone.addEventListener('dragenter', () => zone.classList.add('dragover'));
+  zone.addEventListener('dragover',  () => zone.classList.add('dragover'));
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+
+  zone.addEventListener('drop', (e) => {
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  /* Clicking the drop zone also opens the file picker */
+  zone.addEventListener('click', () => document.getElementById('imageInput').click());
+}
+
+
+/* ================================================================
+   5. IMAGE RENDERING — Canvas 1
+   ================================================================ */
+
+/**
+ * Reads the file and draws it on Canvas 1 (originalCanvas).
+ * Scales the image down if it exceeds CONFIG.CANVAS_MAX_WIDTH.
+ * @param {File} file
+ * @returns {Promise<void>}
+ */
+function renderOriginalImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const img = new Image();
+      img.onload = function () {
+        const canvas = document.getElementById('originalCanvas');
+        let w = img.width;
+        let h = img.height;
+        if (w > CONFIG.CANVAS_MAX_WIDTH) {
+          h = Math.round(h * CONFIG.CANVAS_MAX_WIDTH / w);
+          w = CONFIG.CANVAS_MAX_WIDTH;
+        }
+        canvas.width  = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+
+        document.getElementById('originalPlaceholder').style.display = 'none';
+        canvas.style.display = 'block';
+        resolve();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Ensure Canvas 1 has the current file rendered (needed for Re-process).
+ * If the canvas is empty or hidden, re-render from the stored file.
+ */
+async function ensureOriginalRendered() {
+  const c = document.getElementById('originalCanvas');
+  if (c.style.display === 'none' || c.width === 0) {
+    if (currentFile) await renderOriginalImage(currentFile);
+  }
+}
+
+
+/* ================================================================
+   6. OPENCV IMAGE PRE-PROCESSING — Canvas 2
+   ================================================================ */
+
+/**
+ * Reads Canvas 1, applies the selected processing pipeline, writes to Canvas 2.
+ *
+ * Pipeline (all steps are optional/configurable):
+ *   1) Grayscale conversion
+ *   2) Gaussian Blur        (optional — "enableBlur" checkbox)
+ *   3) Thresholding         (Adaptive or Otsu — "threshMethod" select)
+ *   4) Morphological close  (optional — "enableMorph" checkbox)
+ *
+ * @returns {Promise<void>}
+ */
+function applyOpenCVProcessing() {
+  return new Promise((resolve, reject) => {
+    try {
+      /* ── Read Canvas 1 into an OpenCV matrix ─────────────────── */
+      const src = cv.imread('originalCanvas');
+
+      /* ── Step 1: Convert RGBA → Grayscale ────────────────────── */
+      const gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+      /* ── Step 2 (optional): Gaussian Blur ────────────────────── */
+      /*
+       * Gaussian Blur smooths the image before thresholding.
+       * This helps reduce scan noise, halftone dots, and fine textures
+       * that would otherwise appear as noise in the binary image.
+       * Kernel size 3×3 is mild; increase to 5×5 for heavier blur.
+       */
+      let blurred = gray;
+      if (document.getElementById('enableBlur').checked) {
+        blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0);
+      }
+
+      /* ── Step 3: Thresholding ────────────────────────────────── */
+      const thresh = new cv.Mat();
+      const method = document.getElementById('threshMethod').value;
+
+      if (method === 'adaptive') {
+        const blockSize = parseInt(document.getElementById('blockSize').value);
+        const C         = parseInt(document.getElementById('cConst').value);
+        cv.adaptiveThreshold(
+          blurred, thresh,
+          255,
+          cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+          cv.THRESH_BINARY,
+          blockSize,
+          C
+        );
+      } else {
+        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+      }
+
+      /* ── Step 4 (optional): Morphological close ──────────────── */
+      /*
+       * Morphological CLOSE = dilate then erode.
+       * Fills small gaps inside letters (broken strokes from thresholding).
+       * Kernel 2×2 is very mild — keeps text intact but seals tiny holes.
+       */
+      let final = thresh;
+      if (document.getElementById('enableMorph').checked) {
+        final = new cv.Mat();
+        const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(2, 2));
+        cv.morphologyEx(thresh, final, cv.MORPH_CLOSE, kernel);
+        kernel.delete();
+      }
+
+      /* ── Render result to Canvas 2 ───────────────────────────── */
+      const processedCanvas = document.getElementById('processedCanvas');
+      processedCanvas.width  = final.cols;
+      processedCanvas.height = final.rows;
+      cv.imshow('processedCanvas', final);
+
+      document.getElementById('processedPlaceholder').style.display = 'none';
+      processedCanvas.style.display = 'block';
+
+      /* ── Free OpenCV memory (important in WASM environment) ───── */
+      src.delete();
+      gray.delete();
+      if (blurred !== gray) blurred.delete();
+      thresh.delete();
+      if (final !== thresh) final.delete();
+
+      resolve();
+    } catch (err) {
+      reject(new Error(`OpenCV processing failed: ${err.message || err}`));
+    }
+  });
+}
+
+
+/* ================================================================
+   7. TESSERACT OCR
+   ================================================================ */
+
+/**
+ * Runs Tesseract.js on Canvas 2 (the processed image).
+ *
+ * Configuration:
+ *  - Language : selected by user (default 'tha+eng')
+ *  - PSM      : selected by user in Settings panel
+ *  - logger   : updates the status bar and progress bar with live %
+ *
+ * @returns {Promise<string>} The raw extracted text
+ */
+async function performTesseractOCR() {
+  const lang    = document.getElementById('ocrLang').value;
+  const psm     = parseInt(document.getElementById('psmMode').value);
+  const canvas  = document.getElementById('processedCanvas');
+
+  const result = await Tesseract.recognize(
+    canvas,
+    lang,
+    {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round((m.progress || 0) * 100);
+          setStatus('processing', `🔤 Running OCR... ${pct}%`);
+          showProgress(25 + Math.round(pct * 0.75));  // 25-100% range
+        }
+      },
+      tessedit_pageseg_mode: psm,
+    }
+  );
+
+  return result.data.text;
+}
+
+
+/* ================================================================
+   8. UI HELPERS
+   ================================================================ */
+
+/**
+ * Updates the status bar colour class and message text.
+ * @param {'loading'|'processing'|'success'|'error'} state
+ * @param {string} message
+ */
+function setStatus(state, message) {
+  const bar  = document.getElementById('statusBar');
+  const text = document.getElementById('statusText');
+  bar.className = `status-bar ${state}`;
+  text.textContent = message;
+}
+
+/**
+ * Shows the OCR result in the textarea, reveals timing & action buttons.
+ * @param {string} text       - raw OCR output
+ * @param {number} cvMs       - OpenCV processing time (ms)
+ * @param {number} ocrMs      - Tesseract OCR time (ms)
+ */
+function displayResults(text, cvMs, ocrMs) {
+  const totalMs  = performance.now() - startTime;
+  const totalSec = (totalMs / 1000).toFixed(2);
+  const cvSec    = (cvMs  / 1000).toFixed(2);
+  const ocrSec   = (ocrMs / 1000).toFixed(2);
+
+  // Textarea
+  const ta = document.getElementById('resultText');
+  ta.value = text.trim() || '(No text detected)';
+
+  // Total execution time badge (header)
+  const timeEl = document.getElementById('execTime');
+  timeEl.textContent = `⏱ ${totalSec} s`;
+  timeEl.style.display = 'inline-block';
+
+  // Timing breakdown badges (Phase 1)
+  document.getElementById('timeCV').textContent    = `${cvSec} s`;
+  document.getElementById('timeOCR').textContent   = `${ocrSec} s`;
+  document.getElementById('timeTotal').textContent = `${totalSec} s`;
+  document.getElementById('charCount').textContent = ta.value.length;
+  document.getElementById('timingBadges').style.display = 'flex';
+
+  // Action buttons
+  document.querySelectorAll('.output-actions .btn').forEach(b => b.style.display = 'inline-flex');
+
+  // Show Re-process button (Phase 1)
+  hasResult = true;
+  document.getElementById('reprocessBtn').style.display = 'inline-flex';
+
+  hideProgress();
+  setStatus('success', `✅ Done!  Extracted ${ta.value.length} characters in ${totalSec} s.`);
+}
+
+/**
+ * Disables/enables interactive elements during processing.
+ * @param {boolean} isProcessing
+ */
+function setProcessingUI(isProcessing) {
+  document.getElementById('startBtn').disabled    = isProcessing;
+  document.getElementById('reprocessBtn').disabled = isProcessing;
+  document.getElementById('resetBtn').disabled    = isProcessing;
+  document.getElementById('imageInput').disabled  = isProcessing;
+}
+
+/**
+ * Enables Start button only when OpenCV is ready AND a file is chosen.
+ */
+function refreshStartButton() {
+  document.getElementById('startBtn').disabled = !(cvReady && currentFile);
+}
+
+/**
+ * Clears canvas, textarea, timing, action buttons.
+ * @param {boolean} clearFile - also clear the stored file reference
+ */
+function clearOutputs(clearFile) {
+  if (clearFile) currentFile = null;
+
+  // Clear Canvas 1
+  const c1 = document.getElementById('originalCanvas');
+  c1.getContext('2d').clearRect(0, 0, c1.width, c1.height);
+  c1.style.display = 'none';
+  document.getElementById('originalPlaceholder').style.display = '';
+
+  // Clear Canvas 2
+  const c2 = document.getElementById('processedCanvas');
+  c2.getContext('2d').clearRect(0, 0, c2.width, c2.height);
+  c2.style.display = 'none';
+  document.getElementById('processedPlaceholder').style.display = '';
+
+  // Clear output
+  document.getElementById('resultText').value = '';
+  document.getElementById('execTime').style.display     = 'none';
+  document.getElementById('timingBadges').style.display  = 'none';
+  document.querySelectorAll('.output-actions .btn').forEach(b => b.style.display = 'none');
+}
+
+/* ── Progress bar helpers (Phase 1) ─────────────────────────────── */
+function showProgress(pct) {
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressFill').style.width   = Math.min(pct, 100) + '%';
+}
+function hideProgress() {
+  document.getElementById('progressWrap').style.display = 'none';
+  document.getElementById('progressFill').style.width   = '0%';
+}
+
+/* ── Clipboard copy ─────────────────────────────────────────────── */
+async function copyResult() {
+  const text = document.getElementById('resultText').value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    flashButton('copyBtn', '✅ Copied!');
+  } catch (_) {
+    document.getElementById('resultText').select();
+    document.execCommand('copy');
+    flashButton('copyBtn', '✅ Copied!');
+  }
+}
+
+/* ── Download as .txt (Phase 1) ─────────────────────────────────── */
+function downloadResult() {
+  const text = document.getElementById('resultText').value;
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  // Use original filename (minus extension) + _ocr.txt
+  const baseName = currentFile ? currentFile.name.replace(/\.[^.]+$/, '') : 'result';
+  a.download = `${baseName}_ocr.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  flashButton('downloadBtn', '✅ Saved!');
+}
+
+/**
+ * Briefly replaces a button's text with a confirmation message.
+ * @param {string} btnId
+ * @param {string} msg
+ */
+function flashButton(btnId, msg) {
+  const btn  = document.getElementById(btnId);
+  const orig = btn.textContent;
+  btn.textContent = msg;
+  setTimeout(() => { btn.textContent = orig; }, 1800);
+}
+
+
+/* ================================================================
+   9. INITIALISATION
+   ================================================================ */
+
+/* Hide canvases on page load (they are empty) */
+document.getElementById('originalCanvas').style.display  = 'none';
+document.getElementById('processedCanvas').style.display = 'none';
+
+/* Initialise drag-and-drop (Phase 1) */
+initDragDrop();
+
+
+/* ================================================================
+   10. PHASE 2 — AUTOMATED BENCHMARK
+   ================================================================
+   Generates test images with KNOWN text using Canvas 2D, then runs
+   the full OpenCV→Tesseract pipeline with every combination of
+   settings and compares the OCR output to the expected text.
+
+   Accuracy = Longest Common Subsequence / expected length
+   (this is more forgiving than exact match for OCR evaluation)
+   ================================================================ */
+
+/** All benchmark results go here (for export) */
+let benchResults = [];
+
+/* ── Test cases ─────────────────────────────────────────────────── */
+/*
+ * Each test case defines:
+ *  - label     : Short description shown in the report
+ *  - text      : The EXACT string drawn onto the generated image
+ *  - lang      : Tesseract language code to use
+ *  - fontSize  : Font size for the generated image (px)
+ *  - fontFace  : CSS font-family for text rendering
+ *
+ * We test English, Thai, and Mixed content at different sizes.
+ */
+const TEST_CASES = [
+  {
+    label: 'English — large',
+    text: 'Insurance Policy No 12345\nPremium Amount 50000 THB\nCoverage Type Health',
+    lang: 'eng',
+    fontSize: 32,
+    fontFace: 'Arial, sans-serif',
+  },
+  {
+    label: 'English — small',
+    text: 'Effective Date 01 Jan 2026\nExpiry Date 31 Dec 2026\nAgent ID 9876',
+    lang: 'eng',
+    fontSize: 20,
+    fontFace: 'Arial, sans-serif',
+  },
+  {
+    label: 'Thai — large',
+    text: 'กรมธรรม์ประกันภัย\nจำนวนเบี้ย 50000 บาท\nผู้เอาประกัน นายทดสอบ',
+    lang: 'tha',
+    fontSize: 32,
+    fontFace: 'Noto Sans Thai, Tahoma, sans-serif',
+  },
+  {
+    label: 'Thai — small',
+    text: 'วันเริ่มสัญญา มกราคม\nวันสิ้นสุด ธันวาคม\nหมายเลข 9876',
+    lang: 'tha',
+    fontSize: 20,
+    fontFace: 'Noto Sans Thai, Tahoma, sans-serif',
+  },
+  {
+    label: 'Mixed TH+EN',
+    text: 'Policy กรมธรรม์ No 12345\nPremium เบี้ย 50000 THB\nAgent ตัวแทน ID 99',
+    lang: 'tha+eng',
+    fontSize: 28,
+    fontFace: 'Noto Sans Thai, Arial, sans-serif',
+  },
+];
+
+/* ── Setting combos to test per test case ───────────────────────── */
+const SETTING_COMBOS = [
+  { thresh: 'adaptive', blockSize: 11, C: 2,  blur: false, morph: false, psm: 3, tag: 'Adaptive b11 c2' },
+  { thresh: 'adaptive', blockSize: 11, C: 2,  blur: true,  morph: false, psm: 3, tag: 'Adaptive b11 c2 +blur' },
+  { thresh: 'adaptive', blockSize: 21, C: 5,  blur: false, morph: false, psm: 3, tag: 'Adaptive b21 c5' },
+  { thresh: 'adaptive', blockSize: 11, C: 2,  blur: false, morph: true,  psm: 3, tag: 'Adaptive b11 c2 +morph' },
+  { thresh: 'otsu',     blockSize: 0,  C: 0,  blur: false, morph: false, psm: 3, tag: 'Otsu' },
+  { thresh: 'otsu',     blockSize: 0,  C: 0,  blur: true,  morph: false, psm: 3, tag: 'Otsu +blur' },
+  { thresh: 'otsu',     blockSize: 0,  C: 0,  blur: true,  morph: true,  psm: 3, tag: 'Otsu +blur +morph' },
+  { thresh: 'adaptive', blockSize: 11, C: 2,  blur: false, morph: false, psm: 6, tag: 'Adaptive b11 c2 PSM6' },
+];
+
+
+/**
+ * Generate a test image as a Blob (PNG).
+ * Draws known text on a white background, simulating a clean A4 document.
+ * @param {object} tc  - Test case definition
+ * @returns {Promise<Blob>}
+ */
+function generateTestImage(tc) {
+  return new Promise((resolve) => {
+    const W = 800;
+    const H = 400;
+    const cvs = document.createElement('canvas');
+    cvs.width  = W;
+    cvs.height = H;
+    const ctx  = cvs.getContext('2d');
+
+    // White background (like paper)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw text
+    ctx.fillStyle = '#000000';
+    ctx.font = `${tc.fontSize}px ${tc.fontFace}`;
+    ctx.textBaseline = 'top';
+
+    const lines = tc.text.split('\n');
+    const lineHeight = tc.fontSize * 1.6;
+    const startY = 40;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, 40, startY + i * lineHeight);
+    });
+
+    cvs.toBlob((blob) => resolve(blob), 'image/png');
+  });
+}
+
+
+/**
+ * Apply settings combo to the UI controls (so the existing pipeline reads them).
+ * @param {object} combo  - A setting combination from SETTING_COMBOS
+ * @param {string} lang   - Tesseract language code
+ */
+function applySettingsCombo(combo, lang) {
+  document.getElementById('threshMethod').value = combo.thresh;
+  document.getElementById('blockSize').value    = combo.blockSize;
+  document.getElementById('blockSizeVal').textContent = combo.blockSize;
+  document.getElementById('cConst').value       = combo.C;
+  document.getElementById('cConstVal').textContent = combo.C;
+  document.getElementById('enableBlur').checked  = combo.blur;
+  document.getElementById('enableMorph').checked = combo.morph;
+  document.getElementById('psmMode').value       = combo.psm;
+  document.getElementById('ocrLang').value       = lang;
+
+  // Toggle adaptive-only fields
+  const isAdaptive = combo.thresh === 'adaptive';
+  document.getElementById('blockSizeSetting').style.display = isAdaptive ? '' : 'none';
+  document.getElementById('cConstSetting').style.display    = isAdaptive ? '' : 'none';
+}
+
+
+/**
+ * Compute accuracy: Longest Common Subsequence length / expected length.
+ * More forgiving than exact match — handles small OCR errors like
+ * extra spaces, missing punctuation, etc.
+ * @param {string} expected
+ * @param {string} actual
+ * @returns {number} 0–100 percentage
+ */
+function computeAccuracy(expected, actual) {
+  // Normalise: collapse whitespace, trim, lowercase for fair comparison
+  const norm = (s) => s.replace(/[\s\n\r]+/g, ' ').trim().toLowerCase();
+  const a = norm(expected);
+  const b = norm(actual);
+  if (a.length === 0) return b.length === 0 ? 100 : 0;
+
+  // LCS via optimised two-row DP
+  const m = a.length, n = b.length;
+  let prev = new Uint16Array(n + 1);
+  let curr = new Uint16Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) curr[j] = prev[j - 1] + 1;
+      else curr[j] = Math.max(prev[j], curr[j - 1]);
+    }
+    [prev, curr] = [curr, prev];
+    curr.fill(0);
+  }
+  return Math.round((prev[n] / m) * 100);
+}
+
+
+/**
+ * Append a line to the benchmark log panel.
+ * @param {string} msg
+ */
+function benchLog(msg) {
+  const el = document.getElementById('benchLog');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+
+/**
+ * Main benchmark runner.
+ * Iterates over all test cases × setting combos, runs the pipeline,
+ * compares OCR output to expected text, and builds a results table.
+ */
+async function runBenchmark() {
+  if (!cvReady) { alert('OpenCV is not ready yet.'); return; }
+
+  /* ── Prepare ──────────────────────────────────────────────────── */
+  const btn = document.getElementById('benchRunBtn');
+  btn.disabled = true;
+  benchResults = [];
+  const logEl = document.getElementById('benchLog');
+  logEl.textContent = '';
+
+  const totalRuns = TEST_CASES.length * SETTING_COMBOS.length;
+  let runNum = 0;
+
+  benchLog(`🧪 Benchmark started — ${TEST_CASES.length} test cases × ${SETTING_COMBOS.length} combos = ${totalRuns} runs`);
+  benchLog('─'.repeat(60));
+
+  /* ── Run each test case ───────────────────────────────────────── */
+  for (const tc of TEST_CASES) {
+    benchLog(`\n📄 Test case: "${tc.label}"  (lang: ${tc.lang})`);
+
+    // Generate test image
+    const blob = await generateTestImage(tc);
+    const file = new File([blob], `test_${tc.label}.png`, { type: 'image/png' });
+
+    // Load into Canvas 1
+    currentFile = file;
+    await renderOriginalImage(file);
+
+    for (const combo of SETTING_COMBOS) {
+      runNum++;
+      const pct = Math.round((runNum / totalRuns) * 100);
+      document.getElementById('benchStatus').textContent = `Running ${runNum}/${totalRuns} (${pct}%)…`;
+
+      applySettingsCombo(combo, tc.lang);
+
+      benchLog(`  ▸ [${runNum}/${totalRuns}] ${combo.tag}  (PSM ${combo.psm}, lang ${tc.lang})`);
+
+      try {
+        // Re-render original (to be safe)
+        await renderOriginalImage(file);
+
+        // OpenCV
+        const cvStart = performance.now();
+        await applyOpenCVProcessing();
+        const cvMs = performance.now() - cvStart;
+
+        // Tesseract
+        const ocrStart = performance.now();
+        const ocrText = await performTesseractOCR();
+        const ocrMs = performance.now() - ocrStart;
+
+        // Accuracy
+        const accuracy = computeAccuracy(tc.text, ocrText);
+
+        benchResults.push({
+          testCase   : tc.label,
+          lang       : tc.lang,
+          settings   : combo.tag,
+          psm        : combo.psm,
+          cvTime     : cvMs,
+          ocrTime    : ocrMs,
+          totalTime  : cvMs + ocrMs,
+          accuracy   : accuracy,
+          chars      : ocrText.trim().length,
+          expected   : tc.text,
+          actual     : ocrText.trim().substring(0, 200),
+        });
+
+        benchLog(`    ✅ accuracy=${accuracy}%  cv=${(cvMs/1000).toFixed(2)}s  ocr=${(ocrMs/1000).toFixed(2)}s  chars=${ocrText.trim().length}`);
+
+      } catch (err) {
+        benchResults.push({
+          testCase: tc.label, lang: tc.lang, settings: combo.tag, psm: combo.psm,
+          cvTime: 0, ocrTime: 0, totalTime: 0, accuracy: 0, chars: 0,
+          expected: tc.text, actual: `ERROR: ${err.message}`,
+        });
+        benchLog(`    ❌ ERROR: ${err.message}`);
+      }
+    }
+  }
+
+  /* ── Summary ──────────────────────────────────────────────────── */
+  benchLog('\n' + '═'.repeat(60));
+  benchLog(`🏁 Benchmark complete — ${totalRuns} runs finished.`);
+
+  // Find best combo per test case
+  const grouped = {};
+  benchResults.forEach(r => {
+    if (!grouped[r.testCase]) grouped[r.testCase] = [];
+    grouped[r.testCase].push(r);
+  });
+  benchLog('\n📊 Best settings per test case:');
+  for (const [tc, rows] of Object.entries(grouped)) {
+    const best = rows.reduce((a, b) => a.accuracy > b.accuracy ? a : b);
+    benchLog(`  • ${tc}: "${best.settings}" → ${best.accuracy}% accuracy (${(best.totalTime/1000).toFixed(2)}s)`);
+  }
+
+  /* ── Render results table ─────────────────────────────────────── */
+  renderBenchTable();
+
+  document.getElementById('benchStatus').textContent = `✅ Done — ${totalRuns} runs`;
+  document.getElementById('benchExportBtn').style.display = 'inline-flex';
+  btn.disabled = false;
+}
+
+
+/**
+ * Render the results as an HTML table in the benchmark panel.
+ */
+function renderBenchTable() {
+  // Find best accuracy per test case
+  const bestPerCase = {};
+  benchResults.forEach(r => {
+    if (!bestPerCase[r.testCase] || r.accuracy > bestPerCase[r.testCase]) {
+      bestPerCase[r.testCase] = r.accuracy;
+    }
+  });
+
+  let html = `<table class="bench-table">
+    <thead><tr>
+      <th>Test Case</th><th>Settings</th><th>PSM</th>
+      <th>Accuracy</th><th>OpenCV</th><th>OCR</th><th>Total</th><th>Chars</th>
+    </tr></thead><tbody>`;
+
+  benchResults.forEach(r => {
+    const isBest = r.accuracy === bestPerCase[r.testCase] && r.accuracy > 0;
+    const cls = isBest ? ' class="best"' : '';
+    const accCls = r.accuracy >= 70 ? 'match' : 'miss';
+    html += `<tr${cls}>
+      <td>${r.testCase}</td>
+      <td>${r.settings}</td>
+      <td>${r.psm}</td>
+      <td class="${accCls}">${r.accuracy}%</td>
+      <td>${(r.cvTime/1000).toFixed(2)}s</td>
+      <td>${(r.ocrTime/1000).toFixed(2)}s</td>
+      <td>${(r.totalTime/1000).toFixed(2)}s</td>
+      <td>${r.chars}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('benchTableWrap').innerHTML = html;
+}
+
+
+/**
+ * Export benchmark results as a plain text report.
+ */
+function exportBenchmark() {
+  if (!benchResults.length) return;
+
+  let report = '═══════════════════════════════════════════════════════════\n';
+  report += '  Insurance OCR POC — Benchmark Report\n';
+  report += '  Date: ' + new Date().toISOString() + '\n';
+  report += '═══════════════════════════════════════════════════════════\n\n';
+
+  report += `Total runs: ${benchResults.length}\n\n`;
+  report += 'Test Case'.padEnd(20) + 'Settings'.padEnd(28) + 'PSM'.padEnd(5) +
+            'Acc%'.padEnd(6) + 'CV(s)'.padEnd(8) + 'OCR(s)'.padEnd(8) + 'Total(s)'.padEnd(9) + 'Chars\n';
+  report += '─'.repeat(92) + '\n';
+
+  benchResults.forEach(r => {
+    report += r.testCase.padEnd(20) +
+              r.settings.padEnd(28) +
+              String(r.psm).padEnd(5) +
+              (r.accuracy + '%').padEnd(6) +
+              (r.cvTime/1000).toFixed(2).padEnd(8) +
+              (r.ocrTime/1000).toFixed(2).padEnd(8) +
+              (r.totalTime/1000).toFixed(2).padEnd(9) +
+              r.chars + '\n';
+  });
+
+  // Best per case
+  report += '\n\n📊 Best settings per test case:\n';
+  report += '─'.repeat(60) + '\n';
+  const grouped = {};
+  benchResults.forEach(r => {
+    if (!grouped[r.testCase]) grouped[r.testCase] = [];
+    grouped[r.testCase].push(r);
+  });
+  for (const [tc, rows] of Object.entries(grouped)) {
+    const best = rows.reduce((a, b) => a.accuracy > b.accuracy ? a : b);
+    report += `  ${tc}: "${best.settings}" → ${best.accuracy}% (${(best.totalTime/1000).toFixed(2)}s)\n`;
+  }
+
+  // OCR output samples
+  report += '\n\n📝 OCR Output Samples:\n';
+  report += '─'.repeat(60) + '\n';
+  benchResults.forEach(r => {
+    report += `\n[${r.testCase} | ${r.settings}]  accuracy=${r.accuracy}%\n`;
+    report += `  Expected: ${r.expected.replace(/\n/g, ' | ')}\n`;
+    report += `  Actual  : ${r.actual.replace(/\n/g, ' | ')}\n`;
+  });
+
+  const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `ocr_benchmark_${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ── Enable benchmark button once OpenCV is loaded ──────────────── */
+const _origOnOpenCvReady = onOpenCvReady;
+onOpenCvReady = function() {
+  _origOnOpenCvReady();
+  document.getElementById('benchRunBtn').disabled = false;
+  document.getElementById('benchLog').textContent = 'OpenCV ready ✅  Click "Run Full Benchmark" to start.\n';
+};
+
+</script>
+</body>
+</html>
+
